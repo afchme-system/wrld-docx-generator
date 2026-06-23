@@ -1,0 +1,24 @@
+{
+  "template_name": "WRLD-Template-Letter (1).docx",
+  "content": {
+    "date": "22 June 2026",
+    "recipient_full_name": "John Smith",
+    "recipient_title": "Hotel Director",
+    "organisation": "Luxury Hotels XYZ",
+    "address_line_1": "123 Oxford Street",
+    "city_postcode": "London, W1D 2AF",
+    "country": "United Kingdom",
+    "subject_reference": "Uniform Supply Proposal",
+    "recipient_name": "John",
+    "opening_paragraph": "We are pleased to present our comprehensive uniform solution designed specifically for the hospitality sector.",
+    "body_paragraph_1": "Our team at AFC specializes in bespoke hospitality uniforms with over 15 years of experience serving luxury establishments across Europe.",
+    "body_paragraph_2": "We propose a three-phase approach: Design & Concept (4 weeks), Sample Production (4 weeks), and Full Production & Delivery (8 weeks). Complete investment: £23,000.",
+    "closing_paragraph": "We would welcome the opportunity to discuss this proposal further and answer any questions you may have. Please feel free to contact us at your convenience.",
+    "signatory_full_name": "Sebastian Dawber",
+    "signatory_title": "Director, AFC Limited",
+    "company_name": "AFC Limited",
+    "email": "sebastian@afc.com",
+    "phone": "+44 20 7946 0958"
+  },
+  "output_filename": "Letter_AFC_Hotels_2026.docx"
+}
