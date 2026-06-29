@@ -37,13 +37,6 @@ class DocumentBuilder:
         for comp in spec.get('components', []):
             self._render(doc, comp)
         
-        # Add placeholders page if provided
-        if spec.get('placeholders'):
-            doc.add_page_break()
-            doc.add_heading('Placeholders', level=1)
-            for ph in spec['placeholders']:
-                doc.add_paragraph(f'• {ph}', style='List Bullet')
-        
         # Save
         doc_bytes = io.BytesIO()
         doc.save(doc_bytes)
