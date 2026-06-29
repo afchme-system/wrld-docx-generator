@@ -3,8 +3,6 @@ import logging
 from docx import Document
 from docx.shared import Pt, RGBColor, Inches
 from docx.enum.text import WD_ALIGN_PARAGRAPH
-from docx.oxml.ns import qn
-from docx.oxml import OxmlElement
 
 logger = logging.getLogger(__name__)
 
@@ -106,13 +104,15 @@ class TemplateCreator:
             for key, value in metadata.items():
                 meta_para = doc.add_paragraph(f'{key}: {value}')
                 meta_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                meta_para.runs[0].font.size = Pt(11)
+                if meta_para.runs:
+                    meta_para.runs[0].font.size = Pt(11)
         
         # Date placeholder
         doc.add_paragraph()
         date_para = doc.add_paragraph('[Document Date: _______________]')
         date_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        date_para.runs[0].font.italic = True
+        if date_para.runs:
+            date_para.runs[0].font.italic = True
     
     def _add_header(self, doc, title):
         """Add header to all sections"""
@@ -120,8 +120,9 @@ class TemplateCreator:
         header = section.header
         header_para = header.paragraphs[0] if header.paragraphs else header.add_paragraph()
         header_para.text = title
-        header_para.runs[0].font.size = Pt(10)
-        header_para.runs[0].font.italic = True
+        if header_para.runs:
+            header_para.runs[0].font.size = Pt(10)
+            header_para.runs[0].font.italic = True
     
     def _add_footer(self, doc, page_numbers=True):
         """Add footer to all sections"""
@@ -130,38 +131,10 @@ class TemplateCreator:
         footer_para = footer.paragraphs[0] if footer.paragraphs else footer.add_paragraph()
         
         if page_numbers:
-            # Add page numbers
-            run = footer_para.add_run()
-            fldChar1 = OxmlElement('w:fldChar')
-            fldChar1.set(qn('w:fldCharType'), 'begin')
-            
-            instrText = OxmlElement('w:instrText')
-            instrText.set(qn('xml:space'), 'preserve')
-            instrText.text = "PAGE"
-            
-            fldChar2 = OxmlElement('w:fldChar')
-            fldChar2.set(qn('w:fldCharType'), 'end')
-            
-            run._r.append(fldChar1)
-            run._r.append(instrText)
-            run._r.append(fldChar2)
-            
-            footer_para.add_run(' of ')
-            
-            run = footer_para.add_run()
-            fldChar1 = OxmlElement('w:fldChar')
-            fldChar1.set(qn('w:fldCharType'), 'begin')
-            
-            instrText = OxmlElement('w:instrText')
-            instrText.set(qn('xml:space'), 'preserve')
-            instrText.text = "NUMPAGES"
-            
-            fldChar2 = OxmlElement('w:fldChar')
-            fldChar2.set(qn('w:fldCharType'), 'end')
-            
-            run._r.append(fldChar1)
-            run._r.append(instrText)
-            run._r.append(fldChar2)
+            footer_para.text = "Page [#] of [##]"
+        else:
+            footer_para.text = "---"
         
         footer_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        footer_para.runs[0].font.size = Pt(10)
+        if footer_para.runs:
+            footer_para.runs[0].font.size = Pt(10)
