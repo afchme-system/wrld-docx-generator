@@ -5,7 +5,7 @@ import logging
 from flask import Flask, request, send_file, jsonify
 from functools import wraps
 from docx import Document
-from docx.shared import Pt, RGBColor
+from docx.shared import Pt, RGBColor, Inches
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
@@ -38,144 +38,119 @@ except Exception as e:
     logger.warning(f"Drive service initialization deferred: {str(e)}")
 
 # ============================================================================
-# TEMPLATE CREATOR CLASS (Document Generation from JSON Specs)
+# GENERIC DOCUMENT BUILDER (JSON-Driven)
 # ============================================================================
 
-class TemplateCreator:
-    """Create new Word documents from JSON specifications"""
+class DocumentBuilder:
+    """Build Word documents from JSON component specifications"""
     
     def __init__(self):
-        pass
+        self.alignment_map = {
+            'left': WD_ALIGN_PARAGRAPH.LEFT,
+            'right': WD_ALIGN_PARAGRAPH.RIGHT,
+            'center': WD_ALIGN_PARAGRAPH.CENTER,
+            'justify': WD_ALIGN_PARAGRAPH.JUSTIFY
+        }
     
-    def create_document(self, title, sections, placeholders, metadata_fields=None, 
-                       cover_page=True, header=True, footer=True, page_numbers=True):
+    def build(self, components, margins=None):
         """
-        Create a new Word document from specification.
+        Build document from JSON component array.
         
-        Args:
-            title: Document title
-            sections: List of section dicts with 'name' and optional 'placeholder'
-            placeholders: List of placeholder strings (e.g., "[INVESTOR_NAME]")
-            metadata_fields: Dict of document metadata
-            cover_page: Whether to add a cover page
-            header: Whether to add header
-            footer: Whether to add footer
-            page_numbers: Whether to add page numbers
-        
-        Returns:
-            Binary .docx file content
+        Each component:
+        {
+            "type": "paragraph|heading|page_break",
+            "content": "text content",
+            "alignment": "left|right|center|justify",
+            "font_name": "Calibri",
+            "font_size": 11,
+            "bold": false,
+            "italic": false,
+            "style": "Normal|List Bullet",
+            "spacing_before": 0,
+            "spacing_after": 12,
+            "color": "#000000"
+        }
         """
         doc = Document()
         
-        # Set default font
-        style = doc.styles['Normal']
-        font = style.font
-        font.name = 'Calibri'
-        font.size = Pt(11)
+        # Set margins if provided
+        if margins:
+            for section in doc.sections:
+                section.top_margin = Inches(margins.get('top', 1))
+                section.bottom_margin = Inches(margins.get('bottom', 1))
+                section.left_margin = Inches(margins.get('left', 1))
+                section.right_margin = Inches(margins.get('right', 1))
         
-        # Add cover page if requested
-        if cover_page:
-            self._add_cover_page(doc, title, metadata_fields or {})
-            doc.add_page_break()
-        
-        # Add table of contents placeholder
-        doc.add_heading('Contents', level=1)
-        doc.add_paragraph('[Table of Contents will be generated here]')
-        doc.add_page_break()
-        
-        # Add sections
-        for section in sections:
-            section_name = section.get('name', 'Untitled Section')
-            section_placeholder = section.get('placeholder', '')
-            
-            doc.add_heading(section_name, level=1)
-            
-            if section_placeholder:
-                doc.add_paragraph(section_placeholder, style='Normal')
-            else:
-                doc.add_paragraph('[Content for ' + section_name + ']', style='Normal')
-            
-            doc.add_paragraph()  # spacing
-        
-        # Add placeholders section
-        if placeholders:
-            doc.add_page_break()
-            doc.add_heading('Placeholders', level=1)
-            for placeholder in placeholders:
-                doc.add_paragraph(f'• {placeholder}', style='List Bullet')
-        
-        # Add header if requested
-        if header:
-            self._add_header(doc, title)
-        
-        # Add footer if requested
-        if footer:
-            self._add_footer(doc, page_numbers)
+        # Process each component
+        for comp in components:
+            self._render_component(doc, comp)
         
         # Save to bytes
         doc_bytes = io.BytesIO()
         doc.save(doc_bytes)
         doc_bytes.seek(0)
         
-        logger.info(f"Created document: {title}, {len(sections)} sections, {len(placeholders)} placeholders")
         return doc_bytes.getvalue()
     
-    def _add_cover_page(self, doc, title, metadata):
-        """Add a professional cover page"""
-        # Title
-        title_para = doc.add_paragraph()
-        title_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        title_run = title_para.add_run(title)
-        title_run.font.size = Pt(28)
-        title_run.font.bold = True
-        title_run.font.color.rgb = RGBColor(0, 51, 102)
+    def _render_component(self, doc, comp):
+        """Render a single component"""
+        comp_type = comp.get('type', 'paragraph').lower()
+        content = comp.get('content', '')
+        
+        if comp_type == 'page_break':
+            doc.add_page_break()
+        
+        elif comp_type == 'heading':
+            level = comp.get('level', 1)
+            para = doc.add_heading(content, level=level)
+            self._apply_formatting(para, comp)
+        
+        elif comp_type == 'paragraph':
+            style = comp.get('style', 'Normal')
+            para = doc.add_paragraph(content, style=style)
+            self._apply_formatting(para, comp)
+        
+        elif comp_type == 'list_bullet':
+            para = doc.add_paragraph(content, style='List Bullet')
+            self._apply_formatting(para, comp)
+        
+        elif comp_type == 'blank':
+            doc.add_paragraph()
+    
+    def _apply_formatting(self, para, comp):
+        """Apply formatting to paragraph"""
+        # Alignment
+        alignment = comp.get('alignment', 'left').lower()
+        para.alignment = self.alignment_map.get(alignment, WD_ALIGN_PARAGRAPH.LEFT)
         
         # Spacing
-        doc.add_paragraph()
-        doc.add_paragraph()
+        if 'spacing_before' in comp:
+            para.paragraph_format.space_before = Pt(comp['spacing_before'])
+        if 'spacing_after' in comp:
+            para.paragraph_format.space_after = Pt(comp['spacing_after'])
         
-        # Metadata - check if it's a dict
-        if metadata and isinstance(metadata, dict):
-            for key, value in metadata.items():
-                meta_para = doc.add_paragraph(f'{key}: {value}')
-                meta_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                if meta_para.runs:
-                    meta_para.runs[0].font.size = Pt(11)
+        # Apply to all runs
+        font_name = comp.get('font_name', 'Calibri')
+        font_size = comp.get('font_size', 11)
+        bold = comp.get('bold', False)
+        italic = comp.get('italic', False)
+        color_hex = comp.get('color', '#000000')
         
-        # Date placeholder
-        doc.add_paragraph()
-        date_para = doc.add_paragraph('[Document Date: _______________]')
-        date_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        if date_para.runs:
-            date_para.runs[0].font.italic = True
-    
-    def _add_header(self, doc, title):
-        """Add header to all sections"""
-        section = doc.sections[0]
-        header = section.header
-        header_para = header.paragraphs[0] if header.paragraphs else header.add_paragraph()
-        header_para.text = title
-        if header_para.runs:
-            header_para.runs[0].font.size = Pt(10)
-            header_para.runs[0].font.italic = True
-    
-    def _add_footer(self, doc, page_numbers=True):
-        """Add footer to all sections"""
-        section = doc.sections[0]
-        footer = section.footer
-        footer_para = footer.paragraphs[0] if footer.paragraphs else footer.add_paragraph()
+        # Parse color
+        try:
+            color_rgb = RGBColor(int(color_hex[1:3], 16), int(color_hex[3:5], 16), int(color_hex[5:7], 16))
+        except:
+            color_rgb = RGBColor(0, 0, 0)
         
-        if page_numbers:
-            footer_para.text = "Page [#] of [##]"
-        else:
-            footer_para.text = "---"
-        
-        footer_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        if footer_para.runs:
-            footer_para.runs[0].font.size = Pt(10)
+        for run in para.runs:
+            run.font.name = font_name
+            run.font.size = Pt(font_size)
+            run.font.bold = bold
+            run.font.italic = italic
+            run.font.color.rgb = color_rgb
 
-# Initialize creator
-creator = TemplateCreator()
+# Initialize builder
+builder = DocumentBuilder()
 
 # ============================================================================
 # ERROR HANDLER DECORATOR
@@ -213,24 +188,34 @@ def create_template():
     """
     POST /create-template
     
-    Create a new Word document from JSON specification.
+    Create a Word document from JSON component specification.
     
     Request body:
     {
-        "title": "FoundMe Investor Funding Proposal Letter",
-        "sections": [
-            {"name": "Company Overview", "placeholder": "[COMPANY_OVERVIEW]"},
-            {"name": "Investment Opportunity", "placeholder": "[INVESTMENT_OPPORTUNITY]"}
+        "title": "Document Title",
+        "output_filename": "output.docx",
+        "margins": {
+            "top": 1,
+            "bottom": 1,
+            "left": 1,
+            "right": 1
+        },
+        "components": [
+            {
+                "type": "paragraph",
+                "content": "Your content here",
+                "alignment": "left",
+                "font_name": "Calibri",
+                "font_size": 11,
+                "bold": false,
+                "italic": false,
+                "spacing_before": 0,
+                "spacing_after": 12
+            },
+            ...
         ],
-        "placeholders": ["[INVESTOR_NAME]", "[INVESTMENT_AMOUNT]", "[COMPANY_NAME]"],
-        "output_filename": "investor-letter.docx",
-        "cover_page": true,
-        "header": true,
-        "footer": true,
-        "page_numbers": true
+        "placeholders": []
     }
-    
-    Response: Binary .docx file
     """
     
     data = request.get_json()
@@ -238,31 +223,44 @@ def create_template():
         raise ValueError("Request body must be JSON")
     
     title = data.get('title', 'Untitled Document')
-    sections = data.get('sections', [])
+    components = data.get('components', [])
     placeholders = data.get('placeholders', [])
-    metadata_fields = data.get('metadata_fields', {})
     output_filename = data.get('output_filename', 'document.docx')
-    cover_page = data.get('cover_page', True)
-    header = data.get('header', True)
-    footer = data.get('footer', True)
-    page_numbers = data.get('page_numbers', True)
+    margins = data.get('margins', {
+        'top': 1,
+        'bottom': 1,
+        'left': 1,
+        'right': 1
+    })
     
     if not output_filename:
         raise ValueError("output_filename is required")
     
-    logger.info(f"Creating template: {title} → {output_filename}")
+    if not components:
+        raise ValueError("components array is required")
     
-    # Create document from spec
-    docx_binary = creator.create_document(
-        title=title,
-        sections=sections,
-        placeholders=placeholders,
-        metadata_fields=metadata_fields,
-        cover_page=cover_page,
-        header=header,
-        footer=footer,
-        page_numbers=page_numbers
-    )
+    logger.info(f"Creating document: {title} → {output_filename} ({len(components)} components)")
+    
+    # Add placeholders page if provided
+    if placeholders:
+        components.append({"type": "page_break"})
+        components.append({
+            "type": "heading",
+            "level": 1,
+            "content": "Placeholders",
+            "font_name": "Calibri",
+            "font_size": 11
+        })
+        for placeholder in placeholders:
+            components.append({
+                "type": "list_bullet",
+                "content": placeholder,
+                "font_name": "Calibri",
+                "font_size": 11
+            })
+    
+    # Build document
+    docx_binary = builder.build(components, margins)
     
     # Return as downloadable file
     return send_file(
@@ -277,21 +275,81 @@ def root():
     """Root endpoint with API documentation"""
     return jsonify({
         "service": "WRLD Document Generator",
-        "version": "1.2",
+        "version": "2.0",
+        "description": "Generic JSON-driven document builder. AI generates JSON specs, app.py renders them.",
         "endpoints": {
-            "POST /create-template": "Create a new Word document from JSON specification",
+            "POST /create-template": "Create document from JSON component spec",
             "GET /health": "Health check"
         },
+        "component_types": ["paragraph", "heading", "page_break", "list_bullet", "blank"],
         "example": {
             "method": "POST",
             "endpoint": "/create-template",
             "body": {
-                "title": "Investor Letter",
-                "sections": [
-                    {"name": "Overview", "placeholder": "[OVERVIEW]"}
+                "title": "Formal Letter",
+                "output_filename": "letter.docx",
+                "margins": {"top": 1, "bottom": 1, "left": 1, "right": 1},
+                "components": [
+                    {
+                        "type": "paragraph",
+                        "content": "Your Name\nYour Address\nYour Email",
+                        "alignment": "right",
+                        "font_name": "Calibri",
+                        "font_size": 10,
+                        "spacing_after": 24
+                    },
+                    {
+                        "type": "paragraph",
+                        "content": "29 June 2026",
+                        "alignment": "right",
+                        "font_name": "Calibri",
+                        "font_size": 11,
+                        "spacing_after": 24
+                    },
+                    {
+                        "type": "paragraph",
+                        "content": "Recipient Name\nRecipient Title\nOrganization",
+                        "alignment": "left",
+                        "font_name": "Calibri",
+                        "font_size": 11,
+                        "spacing_after": 24
+                    },
+                    {
+                        "type": "paragraph",
+                        "content": "RE: Subject Line",
+                        "alignment": "left",
+                        "font_name": "Calibri",
+                        "font_size": 11,
+                        "bold": True,
+                        "spacing_before": 12,
+                        "spacing_after": 12
+                    },
+                    {
+                        "type": "paragraph",
+                        "content": "Dear Recipient,",
+                        "alignment": "left",
+                        "font_name": "Calibri",
+                        "font_size": 11,
+                        "spacing_after": 12
+                    },
+                    {
+                        "type": "paragraph",
+                        "content": "[OPENING_PARAGRAPH]",
+                        "alignment": "left",
+                        "font_name": "Calibri",
+                        "font_size": 11,
+                        "spacing_after": 12
+                    },
+                    {
+                        "type": "paragraph",
+                        "content": "[BODY_PARAGRAPH_1]",
+                        "alignment": "left",
+                        "font_name": "Calibri",
+                        "font_size": 11,
+                        "spacing_after": 12
+                    }
                 ],
-                "placeholders": ["[INVESTOR_NAME]"],
-                "output_filename": "investor-letter.docx"
+                "placeholders": ["[OPENING_PARAGRAPH]", "[BODY_PARAGRAPH_1]"]
             }
         }
     }), 200
