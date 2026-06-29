@@ -134,8 +134,8 @@ class TemplateCreator:
         doc.add_paragraph()
         doc.add_paragraph()
         
-        # Metadata
-        if metadata:
+        # Metadata - check if it's a dict
+        if metadata and isinstance(metadata, dict):
             for key, value in metadata.items():
                 meta_para = doc.add_paragraph(f'{key}: {value}')
                 meta_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
