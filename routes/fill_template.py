@@ -1,3 +1,4 @@
+import os
 import logging
 from flask import request, jsonify
 from services import DriveService, TemplateFiller
@@ -10,9 +11,13 @@ def fill_template(app):
     @app.route('/fill-template', methods=['POST'])
     def fill_template_handler():
         """
-        Fill a template with provided replacements and upload to Drive
+        Fill a template with provided replacements and upload to Drive.
         
-        Request JSON:
+        The template can be identified by either a direct file ID or by name.
+        When using template_name, the service searches the configured templates
+        folder (GOOGLE_DRIVE_TEMPLATES_FOLDER) for a matching file.
+        
+        Request JSON (option A — direct file ID):
         {
             "template_file_id": "Google Drive file ID",
             "replacements": {
@@ -20,6 +25,14 @@ def fill_template(app):
                 "[BODY]": "Content here...",
                 ...
             },
+            "output_filename": "Filled-Document.docx",
+            "folder_id": "Google Drive folder ID for upload"
+        }
+        
+        Request JSON (option B — template name):
+        {
+            "template_name": "WRLD-Template-Letter (1).docx",
+            "replacements": { ... },
             "output_filename": "Filled-Document.docx",
             "folder_id": "Google Drive folder ID for upload"
         }
@@ -38,23 +51,33 @@ def fill_template(app):
             if not data:
                 return jsonify({"error": "No JSON provided"}), 400
             
-            # Validate required fields
+            # Resolve template identifier — accept either a direct file ID or a name
             template_file_id = data.get('template_file_id')
+            template_name = data.get('template_name')
             replacements = data.get('replacements', {})
             output_filename = data.get('output_filename', 'filled-document.docx')
             folder_id = data.get('folder_id')
             
-            if not template_file_id:
-                return jsonify({"error": "template_file_id required"}), 400
+            if not template_file_id and not template_name:
+                return jsonify({"error": "Either template_file_id or template_name is required"}), 400
             if not isinstance(replacements, dict):
                 return jsonify({"error": "replacements must be a dictionary"}), 400
             if not output_filename:
                 return jsonify({"error": "output_filename required"}), 400
             
-            logger.info(f"Filling template {template_file_id} with {len(replacements)} replacements")
-            
             # Initialize Drive service
             drive = DriveService()
+            
+            # Resolve template_name -> file ID when a name is provided
+            if template_name and not template_file_id:
+                templates_folder = os.getenv('GOOGLE_DRIVE_TEMPLATES_FOLDER')
+                logger.info(f"Resolving template by name: {template_name}")
+                try:
+                    template_file_id = drive.find_file_by_name(template_name, folder_id=templates_folder)
+                except FileNotFoundError as e:
+                    return jsonify({"error": str(e)}), 404
+            
+            logger.info(f"Filling template {template_file_id} with {len(replacements)} replacements")
             
             # Check folder exists if provided
             if folder_id and not drive.folder_exists(folder_id):
