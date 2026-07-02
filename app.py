@@ -5,10 +5,15 @@ from flask import Flask, request, send_file, jsonify
 from docx import Document
 from docx.shared import Pt, RGBColor, Inches
 from docx.enum.text import WD_ALIGN_PARAGRAPH
+from routes import read_template, fill_template
 
 app = Flask(__name__)
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Register Filler Agent routes (Agent 2)
+app = read_template(app)
+app = fill_template(app)
 
 class DocumentBuilder:
     """Render JSON specification to .docx - no formatting decisions"""
