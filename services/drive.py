@@ -110,6 +110,48 @@ class DriveService:
             logger.error(f"Failed to get metadata for {file_id}: {e}")
             raise
     
+    def find_file_by_name(self, file_name, folder_id=None):
+        """
+        Search for a file by name in Google Drive, optionally scoped to a folder.
+        
+        Args:
+            file_name: Exact file name to search for (e.g. "WRLD-Template-Letter.docx")
+            folder_id: Optional Drive folder ID to restrict the search
+        
+        Returns:
+            File ID string of the first match
+        
+        Raises:
+            FileNotFoundError if no matching file is found
+        """
+        try:
+            query = f"name = '{file_name}' and trashed = false"
+            if folder_id:
+                query += f" and '{folder_id}' in parents"
+            
+            results = self.service.files().list(
+                q=query,
+                spaces='drive',
+                fields='files(id, name)',
+                pageSize=1
+            ).execute()
+            
+            files = results.get('files', [])
+            if not files:
+                location = f"folder {folder_id}" if folder_id else "Drive"
+                raise FileNotFoundError(
+                    f"Template '{file_name}' not found in {location}"
+                )
+            
+            file_id = files[0]['id']
+            logger.info(f"Found file by name: {file_name} ({file_id})")
+            return file_id
+        except FileNotFoundError:
+            raise
+        except Exception as e:
+            logger.error(f"Failed to find file '{file_name}': {e}")
+            raise
+    
     def folder_exists(self, folder_id):
         """Check if a folder exists and is accessible"""
         try:

@@ -11,6 +11,22 @@ class TemplateFiller:
     PLACEHOLDER_PATTERN = r'\[([A-Z_]+)\]'
     
     @staticmethod
+    def read_template(docx_bytes):
+        """
+        Return the raw bytes of a template unchanged.
+        
+        This is a convenience wrapper that makes the intent explicit when a
+        caller wants to retrieve a template for inspection rather than filling.
+        
+        Args:
+            docx_bytes: Binary content of .docx file (as returned by DriveService.download_file)
+        
+        Returns:
+            The same binary content, unchanged
+        """
+        return docx_bytes
+    
+    @staticmethod
     def fill_template(docx_bytes, replacements):
         """
         Fill a .docx template with provided replacements.

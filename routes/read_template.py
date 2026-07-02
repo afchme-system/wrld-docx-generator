@@ -1,6 +1,7 @@
+import io
 import logging
-from flask import request, jsonify
-from services import DriveService, TemplateParser
+from flask import request, jsonify, send_file
+from services import DriveService
 
 logger = logging.getLogger(__name__)
 
@@ -10,22 +11,15 @@ def read_template(app):
     @app.route('/read-template', methods=['POST'])
     def read_template_handler():
         """
-        Read template metadata and placeholders from Google Drive
+        Download and return the raw binary content of a template from Google Drive.
         
         Request JSON:
         {
             "template_file_id": "Google Drive file ID"
         }
         
-        Response JSON:
-        {
-            "file_id": "...",
-            "file_name": "...",
-            "placeholders": ["[DATE]", "[BODY]", ...],
-            "document_type": "formal_letter",
-            "sections": ["header", "recipient_block", "body"],
-            "metadata": { ... }
-        }
+        Response: Binary .docx file
+        (application/vnd.openxmlformats-officedocument.wordprocessingml.document)
         """
         try:
             data = request.get_json()
@@ -41,32 +35,20 @@ def read_template(app):
             # Initialize Drive service
             drive = DriveService()
             
-            # Get file metadata
+            # Get file metadata to derive a sensible download filename
             file_metadata = drive.get_file_metadata(template_file_id)
             file_name = file_metadata.get('name', 'template.docx')
             
-            # Download template
+            # Download raw template bytes
             docx_bytes = drive.download_file(template_file_id)
             
-            # Parse template
-            placeholders = TemplateParser.extract_placeholders(docx_bytes)
-            full_metadata = TemplateParser.get_metadata(docx_bytes, file_name)
-            
-            response = {
-                "file_id": template_file_id,
-                "file_name": file_name,
-                "placeholders": placeholders,
-                "document_type": full_metadata.get('subject', 'formal_letter'),
-                "sections": full_metadata.get('structure', {}).get('sections', []),
-                "metadata": {
-                    "page_count": full_metadata.get('structure', {}).get('page_count', 1),
-                    "has_letterhead": full_metadata.get('structure', {}).get('has_letterhead', False),
-                    "has_table": full_metadata.get('structure', {}).get('table_count', 0) > 0
-                }
-            }
-            
-            logger.info(f"Template read successful: {len(placeholders)} placeholders")
-            return jsonify(response), 200
+            logger.info(f"Template read successful: {file_name} ({len(docx_bytes)} bytes)")
+            return send_file(
+                io.BytesIO(docx_bytes),
+                mimetype='application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                as_attachment=True,
+                download_name=file_name
+            )
         
         except Exception as e:
             logger.error(f"Error reading template: {e}", exc_info=True)
