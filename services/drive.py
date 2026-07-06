@@ -16,7 +16,12 @@ class DriveService:
         """Initialize Google Drive service using service account credentials"""
         try:
             # Check for service account JSON in environment or files
-            sa_json = os.getenv('GOOGLE_SERVICE_ACCOUNT_JSON')
+            # Accepts either GOOGLE_SERVICE_ACCOUNT_JSON or GOOGLE_CREDENTIALS_JSON
+            # (both names are in use across our services, so we check both)
+            sa_json = (
+                os.getenv('GOOGLE_SERVICE_ACCOUNT_JSON')
+                or os.getenv('GOOGLE_CREDENTIALS_JSON')
+            )
             sa_file = os.getenv('GOOGLE_SERVICE_ACCOUNT_FILE', '/etc/secrets/service-account.json')
             
             if sa_json:
@@ -32,7 +37,7 @@ class DriveService:
                     sa_file, scopes=self.SCOPES
                 )
             else:
-                raise ValueError("No Google service account credentials found. Set GOOGLE_SERVICE_ACCOUNT_JSON or GOOGLE_SERVICE_ACCOUNT_FILE")
+                raise ValueError("No Google service account credentials found. Set GOOGLE_SERVICE_ACCOUNT_JSON or GOOGLE_CREDENTIALS_JSON")
             
             self.service = build('drive', 'v3', credentials=credentials)
             logger.info("Google Drive service initialized")
