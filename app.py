@@ -96,6 +96,22 @@ class DocumentBuilder:
                 cant_split = OxmlElement('w:cantSplit')
                 trPr.append(cant_split)
     
+    def _disable_contextual_spacing(self, para):
+        """
+        Word's built-in List Bullet style has contextualSpacing enabled,
+        which silently suppresses spacing_before/spacing_after between
+        consecutive paragraphs of the same style - making explicit spacing
+        values from the spec unreliable. Force it off on every paragraph
+        so spacing always renders exactly as specified.
+        """
+        pPr = para._p.get_or_add_pPr()
+        existing = pPr.find(qn('w:contextualSpacing'))
+        if existing is not None:
+            pPr.remove(existing)
+        cs = OxmlElement('w:contextualSpacing')
+        cs.set(qn('w:val'), '0')
+        pPr.append(cs)
+ 
     def _format(self, para, comp):
         """Apply formatting from spec"""
         # Alignment
@@ -107,6 +123,10 @@ class DocumentBuilder:
             para.paragraph_format.space_before = Pt(comp['spacing_before'])
         if 'spacing_after' in comp:
             para.paragraph_format.space_after = Pt(comp['spacing_after'])
+ 
+        # Ensure spacing values above always actually render, regardless
+        # of style-level contextualSpacing (e.g. List Bullet)
+        self._disable_contextual_spacing(para)
  
         # Page-break control
         if comp.get('keep_with_next'):
