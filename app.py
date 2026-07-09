@@ -5,16 +5,18 @@ from flask import Flask, request, send_file, jsonify
 from docx import Document
 from docx.shared import Pt, RGBColor, Inches
 from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.oxml.ns import qn
+from docx.oxml import OxmlElement
 from routes import read_template, fill_template
-
+ 
 app = Flask(__name__)
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
+ 
 # Register Filler Agent routes (Agent 2)
 app = read_template(app)
 app = fill_template(app)
-
+ 
 class DocumentBuilder:
     """Render JSON specification to .docx - no formatting decisions"""
     
@@ -59,11 +61,40 @@ class DocumentBuilder:
             para = doc.add_heading(content, level=comp.get('level', 1))
         elif comp_type == 'list_bullet':
             para = doc.add_paragraph(content, style='List Bullet')
+        elif comp_type == 'table':
+            self._render_table(doc, comp)
+            return
         else:
             para = doc.add_paragraph(content, style=comp.get('style', 'Normal'))
         
         if comp_type != 'page_break':
             self._format(para, comp)
+ 
+    def _render_table(self, doc, comp):
+        """Render a table from spec - structure fully driven by the component."""
+        rows = comp.get('rows', [])
+        if not rows:
+            return
+        n_cols = max(len(r) for r in rows)
+        table = doc.add_table(rows=len(rows), cols=n_cols)
+        header_row = comp.get('header_row', False)
+        font_size = comp.get('font_size', 10)
+ 
+        for ri, row_vals in enumerate(rows):
+            for ci in range(n_cols):
+                val = row_vals[ci] if ci < len(row_vals) else ''
+                cell = table.rows[ri].cells[ci]
+                cell.text = ''
+                run = cell.paragraphs[0].add_run(str(val))
+                run.font.size = Pt(font_size)
+                if header_row and ri == 0:
+                    run.font.bold = True
+ 
+        if comp.get('prevent_row_split', True):
+            for row in table.rows:
+                trPr = row._tr.get_or_add_trPr()
+                cant_split = OxmlElement('w:cantSplit')
+                trPr.append(cant_split)
     
     def _format(self, para, comp):
         """Apply formatting from spec"""
@@ -76,6 +107,12 @@ class DocumentBuilder:
             para.paragraph_format.space_before = Pt(comp['spacing_before'])
         if 'spacing_after' in comp:
             para.paragraph_format.space_after = Pt(comp['spacing_after'])
+ 
+        # Page-break control
+        if comp.get('keep_with_next'):
+            para.paragraph_format.keep_with_next = True
+        if comp.get('keep_together'):
+            para.paragraph_format.keep_together = True
         
         # Font
         font_name = comp.get('font_name', 'Calibri')
@@ -100,13 +137,13 @@ class DocumentBuilder:
             run.font.bold = bold
             run.font.italic = italic
             run.font.color.rgb = color_rgb
-
+ 
 builder = DocumentBuilder()
-
+ 
 @app.route('/health', methods=['GET'])
 def health():
     return jsonify({"status": "ok"}), 200
-
+ 
 @app.route('/create-template', methods=['POST'])
 def create():
     """Accept JSON spec, render to .docx"""
@@ -131,11 +168,11 @@ def create():
     except Exception as e:
         logger.error(str(e), exc_info=True)
         return jsonify({"error": str(e)}), 500
-
+ 
 @app.route('/', methods=['GET'])
 def root():
     return jsonify({"service": "WRLD Document Generator", "version": "2.2"}), 200
-
+ 
 if __name__ == '__main__':
     port = int(os.getenv('PORT', 5000))
     app.run(host='0.0.0.0', port=port, debug=False)
